@@ -18,14 +18,19 @@
     rangeScaleFactor = maxDecibels === minDecibels ? 1 : 1 / (maxDecibels - minDecibels);
 
     adapter.prototype = {
+        initContext:function() {
+            this.dancer.trigger('ready');
+        },
 
         load:function (_source) {
             var _this = this;
             this.audio = _source;
 
             this.isLoaded = false;
-            this.progress = 0;
+            this.frameBufferAvailable = false;
+            this.clientNotified = false;
 
+            this.progress = 0;
             if (this.audio.readyState < 3) {
                 this.audio.addEventListener('loadedmetadata', function () {
                     getMetadata.call(_this);
@@ -82,8 +87,13 @@
             return this.audio.currentTime;
         },
 
+        setTime:function (time) {
+            this.audio.currentTime = time;
+        },
+
         update:function (e) {
-            if (!this.isPlaying || !this.isLoaded) return;
+            if (!this.isPlaying || !this.isLoaded || !this.frameBufferAvailable) return;
+
             // Window the input samples.
             var audioSample = [];
 
@@ -92,7 +102,14 @@
                     audioSample[ i ] = ( e.frameBuffer[ 2 * i ] + e.frameBuffer[ 2 * i + 1 ] ) / 2;
                 }
             } catch(err) {
+                this.frameBufferAvailable = false;
+                this.dancer.trigger('noVisuals');
                 return;
+            }
+
+            if (!this.clientNotified) {
+                this.dancer.trigger('visuals');
+                this.clientNotified = true;
             }
 
             applyWindow(audioSample, this.bufferSize);
@@ -130,6 +147,7 @@
         this.signal = new Float32Array(this.fbLength / this.channels);
         this.isLoaded = true;
         this.progress = 1;
+        this.frameBufferAvailable = true;
         this.dancer.trigger('loaded');
     }
 

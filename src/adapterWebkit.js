@@ -11,17 +11,44 @@
         byteMax = 255,
         smoothingFactor = 0.1;
 
+    var createTimer = null;
+    var tries = 0, max_tries = 10;
+
     rangeScaleFactor = maxDecibels === minDecibels ? 1 : 1 / (maxDecibels - minDecibels);
 
     var adapter = function (dancer) {
         this.dancer = dancer;
         this.audio = new Audio();
-        this.context = window.AudioContext ?
-            new window.AudioContext() :
-            new window.webkitAudioContext();
     };
 
     adapter.prototype = {
+        initContext:function() {
+            var self = this;
+            try {
+                if (!window.my_audio_context) {
+                    window.my_audio_context = window.AudioContext ?
+                        new window.AudioContext() :
+                        new window.webkitAudioContext();
+                }
+                this.context = window.my_audio_context;
+
+            } catch (err) {
+                if (createTimer == null) {
+                    createTimer = setInterval(function() {
+                        self.initContext();
+                    }, 500);
+                }
+
+                if (++tries >= max_tries && tries%max_tries==0) {
+                    this.dancer.trigger('audioSetupError');
+                }
+                return;
+            }
+
+            this.dancer.trigger('ready');
+            tries = 0;
+            clearInterval(createTimer);
+        },
 
         load:function (_source) {
             var _this = this;
@@ -94,6 +121,10 @@
             return this.audio.currentTime;
         },
 
+        setTime:function (time) {
+            this.audio.currentTime = time;
+        },
+
         update:function (e) {
             if (!this.isPlaying || !this.isLoaded) return;
 
@@ -152,13 +183,14 @@
     }
 
     function connectContext() {
+        var self = this;
         this.source = this.context.createMediaElementSource(this.audio);
         this.source.connect(this.analyser);
         this.analyser.connect(this.context.destination);
-
         this.isLoaded = true;
         this.progress = 1;
         this.dancer.trigger('loaded');
+        this.dancer.trigger('visuals');
     }
 
     Dancer.adapters.webkit = adapter;
