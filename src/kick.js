@@ -50,7 +50,7 @@
     maxAmplitude : function ( frequency ) {
       var
         max = 0,
-        fft = this.dancer.getSpectrum();
+        fft = this.dancer.getByteSpectrum();
 
       // Sloppy array check
       if ( !frequency.length ) {

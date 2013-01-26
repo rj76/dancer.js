@@ -14,40 +14,51 @@
     var createTimer = null;
     var tries = 0, max_tries = 10;
 
+    var cnt = 0, min_float=0,max_float=0,min_byte=0,max_byte=0;
+
     rangeScaleFactor = maxDecibels === minDecibels ? 1 : 1 / (maxDecibels - minDecibels);
 
     var adapter = function (dancer) {
         this.dancer = dancer;
         this.audio = new Audio();
+        this.old_volume = 0;
+        this.mute = false;
     };
 
     adapter.prototype = {
         initContext:function() {
             var self = this;
             try {
-                if (!window.my_audio_context) {
-                    window.my_audio_context = window.AudioContext ?
+                if (!window.globalContext) {
+                    window.globalContext = window.AudioContext ?
                         new window.AudioContext() :
                         new window.webkitAudioContext();
                 }
-                this.context = window.my_audio_context;
+                this.context = window.globalContext;
 
             } catch (err) {
+                if (++tries >= max_tries && tries%max_tries==0) {
+                    console.log('error: '+err);
+                    this.dancer.trigger('audioSetupError');
+                    clearInterval(createTimer);
+                }
+
                 if (createTimer == null) {
                     createTimer = setInterval(function() {
                         self.initContext();
                     }, 500);
                 }
 
-                if (++tries >= max_tries && tries%max_tries==0) {
-                    this.dancer.trigger('audioSetupError');
-                }
                 return;
             }
 
             this.dancer.trigger('ready');
             tries = 0;
             clearInterval(createTimer);
+        },
+
+        getContext:function() {
+            return this.context;
         },
 
         load:function (_source) {
@@ -58,14 +69,15 @@
             this.progress = 0;
 
             this.analyser = this.context.createAnalyser();
-            this.analyser.fftSize = SAMPLE_SIZE / 2;
+            this.analyser.fftSize = SAMPLE_SIZE;
 //            this.analyser.minDecibels = -100;
 //            this.analyser.maxDecibels =-30;
 
-            this.gain = this.context.createGainNode();
+
+            this.gain = this.context.createGain();
             this.gain.gain = 0;
 
-            this.fft = new FFT(SAMPLE_SIZE / 2, SAMPLE_RATE);
+//            this.fft = new FFT(SAMPLE_SIZE / 2, SAMPLE_RATE);
             this.signal = new Float32Array(SAMPLE_SIZE / 2);
 
             if (this.audio.readyState < 3) {
@@ -98,11 +110,25 @@
         },
 
         setVolume:function (volume) {
-            this.gain.gain.value = volume;
+            if (this.mute) {
+                this.old_volume = volume;
+            } else {
+                this.gain.gain.value = volume;
+            }
         },
 
         getVolume:function () {
             return this.gain.gain.value;
+        },
+
+        setMute:function (mute) {
+            this.mute = mute;
+            if (mute) {
+                this.old_volume = this.gain.gain.value;
+                this.gain.gain.value = 0;
+            } else {
+                this.gain.gain.value = this.old_volume;
+            }
         },
 
         getProgress:function () {
@@ -114,6 +140,14 @@
         },
 
         getSpectrum:function () {
+            return this.spectrum;
+        },
+
+        getByteSpectrum:function () {
+            return this.byte_spectrum;
+        },
+
+        getLinearSpectrum:function () {
             return this.fft.spectrum;
         },
 
@@ -122,6 +156,7 @@
         },
 
         setTime:function (time) {
+            if (!this.isLoaded) return;
             this.audio.currentTime = time;
         },
 
@@ -159,34 +194,44 @@
             }, 50);
             self.timeset = true;
         }
-        var data = new Float32Array(SAMPLE_SIZE / 2);
+        cnt++;
+
+        var data = new Float32Array(SAMPLE_SIZE);
+        var byte_data = new Uint8Array(SAMPLE_SIZE);
         this.analyser.getFloatFrequencyData(data);
+        this.analyser.getByteFrequencyData(byte_data);
 
-        for (var i=0;i<data.length; i++) {
-            // Convert from linear magnitude to unsigned byte decibels.
-            var sampleValue = data[i];
-            sampleValue = byteMax * (sampleValue - minDecibels) * rangeScaleFactor;
-            if (sampleValue < 0) {
-                sampleValue = 0;
-            }
-
-            if (sampleValue > byteMax) {
-                sampleValue = byteMax;
-            }
-
-            // Smooth between current sample and last sample.
-            data[i] = smoothingFactor *  data[i] + (1 - smoothingFactor) * sampleValue;
-        }
-
-        this.fft.spectrum = data;
+        this.spectrum = data;
+        this.byte_spectrum = byte_data;
         this.dancer.trigger('update');
     }
 
+    function decibelsToLinear(db) {
+        return Math.pow(10.0, 0.05 * db);
+    }
+
     function connectContext() {
-        var self = this;
+        var self = this, last;
         this.source = this.context.createMediaElementSource(this.audio);
         this.source.connect(this.analyser);
-        this.analyser.connect(this.context.destination);
+        last = this.analyser;
+
+        if (this.dancer.frequencybox) {
+            last.connect(this.dancer.frequencybox.getAudioNode());
+            last = this.dancer.frequencybox.getAudioNode();
+        }
+
+        if (this.dancer.wavebox) {
+            last.connect(this.dancer.wavebox.getAudioNode());
+            last = this.dancer.wavebox.getAudioNode();
+        }
+
+        if (this.gain) {
+            last.connect(this.gain);
+            last = this.gain;
+        }
+
+        last.connect(this.context.destination);
         this.isLoaded = true;
         this.progress = 1;
         this.dancer.trigger('loaded');

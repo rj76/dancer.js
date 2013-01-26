@@ -22,6 +22,10 @@
             this.dancer.trigger('ready');
         },
 
+        getContext:function() {
+            return null;
+        },
+
         load:function (_source) {
             var _this = this;
             this.audio = _source;
@@ -44,7 +48,6 @@
             }, false);
 
             this.audio.addEventListener('progress', function (e) {
-//        if ( e.currentTarget.duration ) {
                 if (e.currentTarget.duration && ( e.currentTarget.seekable.length > 0 )) {
                     _this.progress = e.currentTarget.seekable.end(0) / e.currentTarget.duration;
                 }
@@ -67,6 +70,10 @@
             this.audio.volume = volume;
         },
 
+        setMute:function (mute) {
+            this.audio.mute = mute;
+        },
+
         getVolume:function () {
             return this.audio.volume;
         },
@@ -83,7 +90,12 @@
             return this.spectrum;
         },
 
+        getLinearSpectrum:function () {
+            return this.fft.spectrum;
+        },
+
         getTime:function () {
+            if (!this.isLoaded) return;
             return this.audio.currentTime;
         },
 
@@ -163,7 +175,7 @@
             return -1000;
         }
 
-        return 20 * Math.log(linear) / Math.log(10)
+        return 20.0 * Math.log(linear) / Math.LN10
     }
 
     /**
@@ -186,7 +198,7 @@
             window = a0 - a1 * Math.cos(2 * Math.PI * x) + a2 * Math.cos(4 * Math.PI * x);
             sample[i] *= window;
         }
-    }
+    };
 
     Dancer.adapters.moz = adapter;
 
